@@ -22,7 +22,8 @@ void setup() {
   pinMode(pin_x_analogue, INPUT);
   pinMode(pin_y_analogue, INPUT);
   pinMode(pin_d_digital, INPUT);
-  Serial.begin(9600);
+  pinMode(LED_RED, OUTPUT);
+  //Serial.begin(9600);
   while (!Serial);
   // initialize the Bluetooth® Low Energy hardware
   BLE.begin();
@@ -109,12 +110,12 @@ void controlCar(BLEDevice peripheral) {
 
 
   while (peripheral.connected()) {
+    //Serial.println("Ready.");
     // while the peripheral is connected
       x = analogRead(pin_x_analogue);
       y = analogRead(pin_y_analogue);
-      d = digitalRead(pin_d_digital);
+      d = !digitalRead(pin_d_digital);
       if (debug == 1){
-        Serial.println("connected");
         Serial.print("X: ");
         Serial.print(x);
         Serial.print(", Y: ");
@@ -126,6 +127,8 @@ void controlCar(BLEDevice peripheral) {
 
       drive_power = map(abs(y - 2048) / 16, 0, 127, 58, 127);
       turn_power = map(abs(x - 2048) / 16, 0, 127, 58, 127);
+
+      // if (d) break;
 
       if (y > 2400){
         drive_direction = '2';
@@ -148,18 +151,13 @@ void controlCar(BLEDevice peripheral) {
 
       if (drive_direction == '0' and turn_direction == '0'){
         send_command_if_non_consecutive(carCharacteristic, '5');
-        delay(10);
       } else if (drive_direction != '0' and turn_direction != '0') {
         //send_command_if_non_consecutive(carCharacteristic, drive_direction);
-        //delay(10);
         send_command_if_non_consecutive(carCharacteristic, turn_direction);
-        delay(10);
       } else if (drive_direction != '0'){
         send_command_if_non_consecutive(carCharacteristic, drive_direction);
-        delay(10);
       } else if (turn_direction != '0'){
         send_command_if_non_consecutive(carCharacteristic, turn_direction);
-        delay(10);
       }
 
       if (abs((int8_t)motor_power - (int8_t)prev_motor_power) > 5){
@@ -181,5 +179,10 @@ void send_command_if_non_consecutive(BLECharacteristic& carCharacteristic ,char 
     carCharacteristic.writeValue(com);
     if (debug == 3) Serial.println((int8_t)com);
     prev_com = com;
+    digitalWrite(LED_RED, HIGH);
+    delay(15);
+    digitalWrite(LED_RED, LOW);
   }
 }
+
+
