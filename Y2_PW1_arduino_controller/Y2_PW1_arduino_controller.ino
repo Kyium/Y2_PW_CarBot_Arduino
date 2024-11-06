@@ -23,6 +23,7 @@ void setup() {
   pinMode(pin_y_analogue, INPUT);
   pinMode(pin_d_digital, INPUT);
   pinMode(LED_RED, OUTPUT);
+  pinMode(LED_GREEN, OUTPUT);
   //Serial.begin(9600);
   while (!Serial);
   // initialize the Bluetooth® Low Energy hardware
@@ -108,6 +109,9 @@ void controlCar(BLEDevice peripheral) {
     return;
   }
 
+  digitalWrite(LED_GREEN, HIGH);
+  delay(15);
+  digitalWrite(LED_GREEN, LOW);
 
   while (peripheral.connected()) {
     //Serial.println("Ready.");
@@ -128,7 +132,7 @@ void controlCar(BLEDevice peripheral) {
       drive_power = map(abs(y - 2048) / 16, 0, 127, 58, 127);
       turn_power = map(abs(x - 2048) / 16, 0, 127, 58, 127);
 
-      // if (d) break;
+      if (d) break;
 
       if (y > 2400){
         drive_direction = '2';
