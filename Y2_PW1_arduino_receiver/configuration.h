@@ -49,18 +49,3 @@ char buffUART[MAX_PACKETSIZE];
 unsigned int buffUARTIndex = 0;
 unsigned long preUARTTick = 0;
 
-enum DS {
-  MANUAL_DRIVE,
-  AUTO_DRIVE_LF, //line follow
-  AUTO_DRIVE_UO  //ultrasonic obstruction
-}Drive_Status=MANUAL_DRIVE;
-
-enum DN { 
-  GO_ADVANCE, 
-  GO_LEFT, 
-  GO_RIGHT,
-  GO_BACK,
-  STOP_STOP,
-  DEF
-}Drive_Num=DEF;
-

@@ -17,6 +17,11 @@ char turn_direction = '0';
 char prev_com = '0';
 unsigned long heartbeat_interval_ms = 750;
 unsigned long heartbeat_tracker = 0;
+unsigned long press_delay = 0;
+
+int8_t command = 0;
+int32_t send = 0;
+
 
 void setup() {
   pinMode(pin_x_analogue, INPUT);
@@ -24,8 +29,9 @@ void setup() {
   pinMode(pin_d_digital, INPUT);
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_GREEN, OUTPUT);
-  //Serial.begin(9600);
-  while (!Serial);
+  Serial.begin(9600);
+  delay(1000);
+  //while (!Serial);
   // initialize the Bluetooth® Low Energy hardware
   BLE.begin();
 
@@ -125,54 +131,62 @@ void controlCar(BLEDevice peripheral) {
         Serial.print(", Y: ");
         Serial.print(y);
         Serial.print(", D: ");
-        Serial.println(!d);
+        Serial.println(d);
         delay(10);
       }
 
-      drive_power = map(abs(y - 2048) / 16, 0, 127, 58, 127);
-      turn_power = map(abs(x - 2048) / 16, 0, 127, 58, 127);
+      drive_power = map(abs(y - 2048) / 16, 0, 127, 10, 126);
+      turn_power = map(abs(x - 2048) / 16, 0, 128, 244, 128);
 
-      if (d) break;
+      //Serial.print("Drive: ");
+      //Serial.print(drive_power);
+      //Serial.print(", Turn: ");
+      //Serial.println(turn_power);
+
+      if (d && (millis() - press_delay > 1000)){
+        send_command_if_non_consecutive(carCharacteristic, 8);
+        press_delay = 1000;
+      }
 
       if (y > 2400){
-        drive_direction = '2';
-        motor_power = (char)drive_power;
+        drive_direction = 1;
+        send_command_if_non_consecutive(carCharacteristic, 1);
       } else if (y < 1800) {
-        drive_direction = '8';
-        motor_power = (char)drive_power;
+        drive_direction = 2;
+        send_command_if_non_consecutive(carCharacteristic, 2);
       } else {
-        drive_direction = '0';
+        drive_direction = 0;
       }
       if (x > 2400) {
-        turn_direction = '6';
-        motor_power = (char)turn_power;
+        turn_direction = 4;
+        send_command_if_non_consecutive(carCharacteristic, 4);
       } else if (x < 1800) {
-        turn_direction = '4';
-        motor_power = (char)turn_power;
+        turn_direction = 5;
+        send_command_if_non_consecutive(carCharacteristic, 5);
       } else {
-        turn_direction = '0';
+        turn_direction = 0;
       }
 
-      if (drive_direction == '0' and turn_direction == '0'){
-        send_command_if_non_consecutive(carCharacteristic, '5');
-      } else if (drive_direction != '0' and turn_direction != '0') {
-        //send_command_if_non_consecutive(carCharacteristic, drive_direction);
-        send_command_if_non_consecutive(carCharacteristic, turn_direction);
-      } else if (drive_direction != '0'){
-        send_command_if_non_consecutive(carCharacteristic, drive_direction);
-      } else if (turn_direction != '0'){
-        send_command_if_non_consecutive(carCharacteristic, turn_direction);
+      if (drive_direction == 0 && turn_direction == 0){
+        send_command_if_non_consecutive(carCharacteristic, 6);
+      } else if (drive_direction == 0){
+        send_command_if_non_consecutive(carCharacteristic, 7);
+      }else if (turn_direction == 0){
+        send_command_if_non_consecutive(carCharacteristic, 3);
       }
 
-      if (abs((int8_t)motor_power - (int8_t)prev_motor_power) > 5){
-        send_command_if_non_consecutive(carCharacteristic, motor_power);
-        if (debug == 2) Serial.println((int8_t)motor_power);
-        prev_motor_power = motor_power;
+
+      if (drive_power > 25){
+        send_command(carCharacteristic, (char)drive_power);
+        delay(10);
+      }
+      if (turn_power < -25){
+        send_command(carCharacteristic, (char)turn_power);
+        delay(10);
       }
 
       if (millis() - heartbeat_tracker > heartbeat_interval_ms){
-        carCharacteristic.writeValue('0');
-        Serial.println("HB");
+        send_command(carCharacteristic, (char)9);
         heartbeat_tracker = millis();
       }
   }
@@ -184,9 +198,17 @@ void send_command_if_non_consecutive(BLECharacteristic& carCharacteristic ,char 
     if (debug == 3) Serial.println((int8_t)com);
     prev_com = com;
     digitalWrite(LED_RED, HIGH);
-    delay(15);
+    delay(10);
     digitalWrite(LED_RED, LOW);
   }
+}
+
+void send_command(BLECharacteristic& carCharacteristic ,char com){
+    carCharacteristic.writeValue(com);
+    if (debug == 3) Serial.println((int8_t)com);
+    digitalWrite(LED_RED, HIGH);
+    delay(10);
+    digitalWrite(LED_RED, LOW);
 }
 
 

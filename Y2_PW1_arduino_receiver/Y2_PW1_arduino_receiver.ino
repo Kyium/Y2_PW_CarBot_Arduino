@@ -5,48 +5,52 @@
 Servo head;
 SoftwareSerial BLE(10, 11); // RX, TX pins for DFR0781 on UNO
 
-int Drive_Power = 255;
-int Prev_Drive_Power = 255;
 unsigned long shutoff_period = 2000;
 bool shutdown = false;
 unsigned long heartbeat = 0;
-char prev_Uart_date = '0';
-bool non_com_recv = false;
+
+int8_t drive_direction = 0;
+int8_t turn_direction = 0;
+int8_t drive_power = 0;
+int8_t turn_power = 0;
+bool do_print = true;
+int8_t last_signal = 0;
+bool changed_signal = false;
+char Uart_Date = 0;
 
 
-DN Prev_Drive_Num = DEF;
+void left(int8_t speed){
+  analogWrite(speedPinL, speed);
+  if (speed >= 0){
+    digitalWrite(dir1PinL, HIGH);
+    digitalWrite(dir2PinL, LOW);
+  } else {
+    digitalWrite(dir1PinL, LOW);
+    digitalWrite(dir2PinL, HIGH);
+  }
+}
 
-/* Motor control */
-void go_Advance() {
-  digitalWrite(dir1PinL, HIGH);
-  digitalWrite(dir2PinL, LOW);
-  digitalWrite(dir1PinR, HIGH);
-  digitalWrite(dir2PinR, LOW);
+void right(int8_t speed){
+  analogWrite(speedPinR, speed);
+  if (speed >= 0){
+    digitalWrite(dir1PinR, HIGH);
+    digitalWrite(dir2PinR, LOW);
+  } else {
+    digitalWrite(dir1PinR, LOW);
+    digitalWrite(dir2PinR, HIGH);
+  }
 }
-void go_Left() {
-  digitalWrite(dir1PinL, HIGH);
-  digitalWrite(dir2PinL, LOW);
-  digitalWrite(dir1PinR, LOW);
-  digitalWrite(dir2PinR, HIGH);
+
+void forward(int8_t speed){
+  left(speed);
+  right(speed);
 }
-void go_Right() {
-  digitalWrite(dir1PinL, LOW);
-  digitalWrite(dir2PinL, HIGH);
-  digitalWrite(dir1PinR, HIGH);
-  digitalWrite(dir2PinR, LOW);
+
+void stop(){
+  left(0);
+  right(0);
 }
-void go_Back() {
-  digitalWrite(dir1PinL, LOW);
-  digitalWrite(dir2PinL, HIGH);
-  digitalWrite(dir1PinR, LOW);
-  digitalWrite(dir2PinR, HIGH);
-}
-void stop_Stop() {
-  digitalWrite(dir1PinL, LOW);
-  digitalWrite(dir2PinL, LOW);
-  digitalWrite(dir1PinR, LOW);
-  digitalWrite(dir2PinR, LOW);
-}
+
 
 /* Set motor speed */
 void set_Motorspeed(int speed_L, int speed_R) {
@@ -55,22 +59,10 @@ void set_Motorspeed(int speed_L, int speed_R) {
   analogWrite(speedPinR, speed_R);   
 }
 
-/* Buzzer control */
-void buzz_ON() {
-  digitalWrite(BUZZ_PIN, LOW);
-}
-void buzz_OFF() {
-  digitalWrite(BUZZ_PIN, HIGH);
-}
-void alarm() {
-  buzz_ON();
-  delay(100);
-  buzz_OFF();
-}
-
 /* Serial (Bluetooth) control */
 void do_Uart_Tick() {
-  char Uart_Date = 0;
+  if ((int8_t)Uart_Date != 0) last_signal = (int8_t)Uart_Date;
+  Uart_Date = 0;
   if (BLE.available()) {
     size_t len = BLE.available();
     uint8_t sbuf[len + 1];
@@ -92,88 +84,106 @@ void do_Uart_Tick() {
       BLE.println("Parameters modified!");
       sscanf(buffUART, "CMD%d,%d,%d", &distancelimit, &sidedistancelimit, &turntime);
     } else {
+      
       Uart_Date = buffUART[0];
+      changed_signal = last_signal != (int8_t)Uart_Date;
     }
     buffUARTIndex = 0;
     heartbeat = millis();
   }
 
   if (!shutdown && ((millis() - heartbeat) > shutoff_period)){
-    stop_Stop(); 
+    stop();
     Serial.println("H STOP");
     shutdown = true;
   }
   
   // Handle control instructions
-  switch (Uart_Date) {
-    case '0': non_com_recv = false; Serial.println("HB"); break; // heartbeat
-    case '1': non_com_recv = false; break;
-    case '2': non_com_recv = false; Drive_Num = GO_ADVANCE; BLE.println("forward"); break;
-    case '3': non_com_recv = false; break;
-    case '4': non_com_recv = false; Drive_Num = GO_LEFT; BLE.println("turn left"); break;
-    case '5': non_com_recv = false; Drive_Num = STOP_STOP; buzz_OFF(); BLE.println("stop"); break;
-    case '6': non_com_recv = false; Drive_Num = GO_RIGHT; BLE.println("turn right"); break;
-    case '7': non_com_recv = false; break;
-    case '8': non_com_recv = false; Drive_Num = GO_BACK; BLE.println("go back"); break;
-    case '9': non_com_recv = false; break;
-    default: non_com_recv = true; break;
+  if ((int)Uart_Date != 0) Serial.println((int) Uart_Date);
+
+  switch ((int8_t)Uart_Date){
+    case 0: // nothing
+      break;
+    case 1:
+      drive_direction = 1;
+      break;
+    case 2:
+      drive_direction = -1;
+      break;
+    case 3:
+      turn_direction = 0;
+      turn_power = 0;
+      break;
+    case 4:
+      turn_direction = 1;
+      break;
+    case 5:
+      turn_direction = -1;
+      break;
+    case 6:
+      drive_direction = 0;
+      turn_direction = 0;
+      drive_power = 0;
+      turn_power = 0;
+      break;
+    case 7:
+      drive_direction = 0;
+      drive_power = 0;
+      break;
+    case 8:
+      do_print = !do_print;
+      break;
+    case 9: // heartbeat
+      break;
   }
-  if ((prev_Uart_date != Uart_Date) && ((int)Uart_Date > 0) && non_com_recv){
-    Drive_Power = ((int)Uart_Date) * 2;
-    Serial.println(Drive_Power);
-    prev_Uart_date = Uart_Date;
+  if ((int)Uart_Date > 9){
+    drive_power = (int8_t)Uart_Date;
+    Serial.print("Drive Power: ");
+    Serial.println(drive_power);
+  }
+  if ((int)Uart_Date < -9){
+    turn_power = abs((int8_t)Uart_Date);
+    Serial.print("Turn Power: ");
+    Serial.println(turn_power);
   }
 }
 
 /* Car motor control */
 void do_Drive_Tick() {
-  if ((Drive_Num != Prev_Drive_Num) || (Drive_Power != Prev_Drive_Power)){
-    switch (Drive_Num) {
-      case GO_ADVANCE: 
-        go_Advance(); 
-        set_Motorspeed(Drive_Power, Drive_Power); 
-        Serial.print("GO forward: "); 
-        Serial.println(Drive_Power);
-        Prev_Drive_Num = Drive_Num;
-        Prev_Drive_Power = Drive_Power;
-        break;
-      case GO_LEFT: 
-        go_Left(); 
-        set_Motorspeed(Drive_Power, Drive_Power); 
-        Serial.print("GO left: ");
-        Serial.println(Drive_Power); 
-        Prev_Drive_Num = Drive_Num;
-        Prev_Drive_Power = Drive_Power;
-        break;
-      case GO_RIGHT: 
-        go_Right(); 
-        set_Motorspeed(Drive_Power, Drive_Power); 
-        Serial.print("GO right: ");
-        Serial.println(Drive_Power); 
-        Prev_Drive_Num = Drive_Num;
-        Prev_Drive_Power = Drive_Power;
-        break;
-      case GO_BACK: 
-        go_Back(); 
-        set_Motorspeed(Drive_Power, Drive_Power); 
-        Serial.print("GO backward: ");
-        Serial.println(Drive_Power); 
-        Prev_Drive_Num = Drive_Num;
-        Prev_Drive_Power = Drive_Power;
-        break;
-      case STOP_STOP: 
-        stop_Stop(); 
-        Serial.println("C STOP");
-        Prev_Drive_Num = Drive_Num;
-        Prev_Drive_Power = Drive_Power;
-        break;
-      default: break;
+  if (drive_direction == 0 && turn_direction == 0){
+    stop();
+  } else {
+    int left_speed = (drive_power * drive_direction) + (turn_power * turn_direction);
+    int right_speed = (drive_power * drive_direction) - (turn_power * turn_direction);
+    if (do_print){
+      Serial.print("Left: ");
+      Serial.print(left_speed);
+      Serial.print(", Left clipped: ");
+      Serial.print(limit(left_speed, -255, 255));
+      Serial.print(", Right: ");
+      Serial.print(right_speed);
+      Serial.print(", Right Clipped: ");
+      Serial.print(limit(right_speed, -255, 255));
+      Serial.print(" || Drive: ");
+      Serial.print(drive_power);
+      Serial.print(", Turn: ");
+      Serial.println(turn_power);
     }
   }
+  //right(left_speed);
+  //right(right_speed);
+}
+
+int limit(int inp, int lower, int upper){
+  if (inp > upper){
+    return upper;
+  } else if (inp < lower){
+    return lower;
+  } else return inp;
 }
 
 void setup() {
-  Serial.begin(9600);      // For Serial Monitor
+  Serial.begin(9600); 
   BLE.begin(9600);         // Bluetooth connection
   Serial.println("Bluetooth ready for commands");
 
@@ -183,19 +193,7 @@ void setup() {
   pinMode(dir1PinR, OUTPUT);
   pinMode(dir2PinR, OUTPUT); 
   pinMode(speedPinR, OUTPUT); 
-  stop_Stop();
-
-  pinMode(Trig_PIN, OUTPUT); 
-  pinMode(Echo_PIN, INPUT); 
-
-  pinMode(BUZZ_PIN, OUTPUT);
-  buzz_OFF();  
-
-  pinMode(LFSensor_0, INPUT);
-  pinMode(LFSensor_1, INPUT);
-  pinMode(LFSensor_2, INPUT);
-  pinMode(LFSensor_3, INPUT);
-  pinMode(LFSensor_4, INPUT); 
+  stop();
 
   digitalWrite(Trig_PIN, LOW);
   head.attach(SERVO_PIN);
@@ -204,5 +202,5 @@ void setup() {
 
 void loop() {
   do_Uart_Tick();
-  do_Drive_Tick();
+  if (changed_signal) do_Drive_Tick();
 }
