@@ -8,19 +8,26 @@ int x = 0;
 int y = 1;
 int d = 0;
 int debug = 3;
-int8_t drive_power = 0;
-int8_t turn_power = 0;
-int8_t motor_power = 0;
-int8_t prev_motor_power = 0;
+int32_t drive_power = 0;
+int32_t turn_power = 0;
+int32_t motor_power = 0;
+int32_t prev_motor_power = 0;
 char drive_direction = '0';
 char turn_direction = '0';
-char prev_com = '0';
+
 unsigned long heartbeat_interval_ms = 750;
 unsigned long heartbeat_tracker = 0;
 unsigned long press_delay = 0;
 
 int8_t command = 0;
+int8_t prev_command = 0;
 int32_t send = 0;
+int32_t command_counter = 0;
+
+int analog_centre = 2048;
+int analog_limit = 4096;
+int inner_deadzone = 200;
+int outer_deadzone = 0;
 
 
 void setup() {
@@ -31,7 +38,7 @@ void setup() {
   pinMode(LED_GREEN, OUTPUT);
   Serial.begin(9600);
   delay(1000);
-  //while (!Serial);
+  while (!Serial);
   // initialize the Bluetooth® Low Energy hardware
   BLE.begin();
 
@@ -65,7 +72,7 @@ void loop() {
     controlCar(peripheral);
 
     // peripheral disconnected, start scanning again
-    BLE.scanForUuid("d6eb");
+    BLE.scanForUuid("6099");
   }
 }
 
@@ -120,7 +127,6 @@ void controlCar(BLEDevice peripheral) {
   digitalWrite(LED_GREEN, LOW);
 
   while (peripheral.connected()) {
-    //Serial.println("Ready.");
     // while the peripheral is connected
       x = analogRead(pin_x_analogue);
       y = analogRead(pin_y_analogue);
@@ -135,80 +141,91 @@ void controlCar(BLEDevice peripheral) {
         delay(10);
       }
 
-      drive_power = map(abs(y - 2048) / 16, 0, 127, 10, 126);
-      turn_power = map(abs(x - 2048) / 16, 0, 128, 244, 128);
+      drive_power = (abs(y - 2048)) / 8 - 1;
+      turn_power = (abs(x - 2048)) / 8 - 1;
 
-      //Serial.print("Drive: ");
-      //Serial.print(drive_power);
-      //Serial.print(", Turn: ");
-      //Serial.println(turn_power);
+
+      command = 0;
+      send = 0;
 
       if (d && (millis() - press_delay > 1000)){
-        send_command_if_non_consecutive(carCharacteristic, 8);
+        command = 10;                                               // button press
         press_delay = 1000;
-      }
-
-      if (y > 2400){
-        drive_direction = 1;
-        send_command_if_non_consecutive(carCharacteristic, 1);
-      } else if (y < 1800) {
-        drive_direction = 2;
-        send_command_if_non_consecutive(carCharacteristic, 2);
       } else {
-        drive_direction = 0;
-      }
-      if (x > 2400) {
-        turn_direction = 4;
-        send_command_if_non_consecutive(carCharacteristic, 4);
-      } else if (x < 1800) {
-        turn_direction = 5;
-        send_command_if_non_consecutive(carCharacteristic, 5);
-      } else {
-        turn_direction = 0;
-      }
-
-      if (drive_direction == 0 && turn_direction == 0){
-        send_command_if_non_consecutive(carCharacteristic, 6);
-      } else if (drive_direction == 0){
-        send_command_if_non_consecutive(carCharacteristic, 7);
-      }else if (turn_direction == 0){
-        send_command_if_non_consecutive(carCharacteristic, 3);
+        if (y > analog_centre + inner_deadzone){
+          if (abs(x - analog_centre) < inner_deadzone) command = 1; // up
+          else if (x > analog_centre + inner_deadzone) command = 2; // up right
+          else if (x < analog_centre - inner_deadzone) command = 3; // up left
+        } else if (y < analog_centre - inner_deadzone){
+          if (abs(x - analog_centre) < inner_deadzone) command = 4; // down
+          else if (x > analog_centre + inner_deadzone) command = 5; // down right
+          else if (x < analog_centre - inner_deadzone) command = 6; // down left
+        } else {
+          if (x > analog_centre + inner_deadzone) command = 7;      // right
+          else if (x < analog_centre - inner_deadzone) command = 8; // left
+          else command = 9;                                         // stop
+        }
       }
 
+      send = command + (drive_power << 8) + (turn_power << 16) + (command_counter << 24);
+      //printBinary(send);
 
-      if (drive_power > 25){
-        send_command(carCharacteristic, (char)drive_power);
-        delay(10);
-      }
-      if (turn_power < -25){
-        send_command(carCharacteristic, (char)turn_power);
-        delay(10);
+      if ((command != prev_command) || (drive_power > 25) || (turn_power > 25)){
+        
+        Serial.print("Drive: ");
+        Serial.print(drive_power);
+        Serial.print(", Turn: ");
+        Serial.print(turn_power);
+        Serial.print(", command: ");
+        Serial.println(command);
+
+        send_command(carCharacteristic, send);
+        command_counter++;
+
+        Serial.print("0: ");
+        Serial.print(send & 0xFF);
+        Serial.print(", 1: ");
+        Serial.print((send >> 8) & 0xFF);
+        Serial.print(", 2: ");
+        Serial.print((send >> 16) & 0xFF);
+        Serial.print(", 3: ");
+        Serial.println((send >> 24) & 0xFF);
+        prev_command = command;
       }
 
-      if (millis() - heartbeat_tracker > heartbeat_interval_ms){
-        send_command(carCharacteristic, (char)9);
+      delay(100);
+
+      if (millis() - heartbeat_tracker > heartbeat_interval_ms && command == 0){
+        send_command(carCharacteristic, (int32_t)11);
         heartbeat_tracker = millis();
       }
   }
 }
 
-void send_command_if_non_consecutive(BLECharacteristic& carCharacteristic ,char com){
-  if (com != prev_com){
+void send_command(BLECharacteristic& carCharacteristic, int32_t com){
     carCharacteristic.writeValue(com);
-    if (debug == 3) Serial.println((int8_t)com);
-    prev_com = com;
-    digitalWrite(LED_RED, HIGH);
-    delay(10);
-    digitalWrite(LED_RED, LOW);
-  }
-}
-
-void send_command(BLECharacteristic& carCharacteristic ,char com){
-    carCharacteristic.writeValue(com);
-    if (debug == 3) Serial.println((int8_t)com);
+    if (debug == 3) Serial.println((int32_t)com);
     digitalWrite(LED_RED, HIGH);
     delay(10);
     digitalWrite(LED_RED, LOW);
 }
 
+void printBinary(int32_t value) {
+    // Buffer to store the binary string with spaces
+    char binaryString[40];  // "0000 0000" + null terminator
+    int index = 0;
 
+    // Iterate over each bit from MSB to LSB
+    for (int i = 31; i >= 0; i--) {
+        // Check if the i-th bit is set, then add '1' or '0' to the binary string
+        binaryString[index++] = (value & (1UL << i)) ? '1' : '0';
+
+        // Add a space after every 4 bits, except for the last one
+        if (i % 4 == 0 && i != 0) {
+            binaryString[index++] = ' ';
+        }
+    }
+    binaryString[index] = '\0';  // Null-terminate the string
+
+    Serial.println(binaryString); // Print the binary string to Serial
+}

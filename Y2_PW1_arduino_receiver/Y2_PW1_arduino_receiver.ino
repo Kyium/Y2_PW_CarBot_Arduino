@@ -11,16 +11,19 @@ unsigned long heartbeat = 0;
 
 int8_t drive_direction = 0;
 int8_t turn_direction = 0;
-int8_t drive_power = 0;
-int8_t turn_power = 0;
+uint8_t drive_power = 0;
+uint8_t turn_power = 0;
 bool do_print = true;
-int8_t last_signal = 0;
-bool changed_signal = false;
-char Uart_Date = 0;
+int32_t command = 0;
+int32_t prev_command = 0;
+
+int debug = 1;
+uint32_t command_counter = 0;
+
 
 
 void left(int8_t speed){
-  analogWrite(speedPinL, speed);
+  analogWrite(speedPinL, abs(speed));
   if (speed >= 0){
     digitalWrite(dir1PinL, HIGH);
     digitalWrite(dir2PinL, LOW);
@@ -31,7 +34,7 @@ void left(int8_t speed){
 }
 
 void right(int8_t speed){
-  analogWrite(speedPinR, speed);
+  analogWrite(speedPinR, abs(speed));
   if (speed >= 0){
     digitalWrite(dir1PinR, HIGH);
     digitalWrite(dir2PinR, LOW);
@@ -61,8 +64,6 @@ void set_Motorspeed(int speed_L, int speed_R) {
 
 /* Serial (Bluetooth) control */
 void do_Uart_Tick() {
-  if ((int8_t)Uart_Date != 0) last_signal = (int8_t)Uart_Date;
-  Uart_Date = 0;
   if (BLE.available()) {
     size_t len = BLE.available();
     uint8_t sbuf[len + 1];
@@ -70,26 +71,31 @@ void do_Uart_Tick() {
     BLE.readBytes(sbuf, len);
     memcpy(buffUART + buffUARTIndex, sbuf, len); // Store data
     buffUARTIndex += len;
-    preUARTTick = millis();
     if (buffUARTIndex >= MAX_PACKETSIZE - 1) {
       buffUARTIndex = MAX_PACKETSIZE - 2;
-      preUARTTick -= 200;
     }
   }
 
-  if (buffUARTIndex > 0 && (millis() - preUARTTick >= 10)) {
+  if (buffUARTIndex > 0) {
     buffUART[buffUARTIndex] = 0x00;
-    if (buffUART[0] == 'C') {
-      BLE.println(buffUART);
-      BLE.println("Parameters modified!");
-      sscanf(buffUART, "CMD%d,%d,%d", &distancelimit, &sidedistancelimit, &turntime);
-    } else {
-      
-      Uart_Date = buffUART[0];
-      changed_signal = last_signal != (int8_t)Uart_Date;
+    
+    if (debug == 1){
+      Serial.print("0: ");
+      Serial.print((uint32_t)buffUART[0]);
+      Serial.print(", 1: ");
+      Serial.print((uint32_t)buffUART[1] & 0xFF);
+      Serial.print(", 2: ");
+      Serial.print((uint32_t)buffUART[2] & 0xFF);
+      Serial.print(", 3: ");
+      Serial.println((uint32_t)buffUART[3] & 0xFF);
     }
     buffUARTIndex = 0;
     heartbeat = millis();
+
+    command = (uint32_t)buffUART[0];
+    drive_power = (uint32_t)buffUART[1] & 0xFF;
+    turn_power = (uint32_t)buffUART[2] & 0xFF;
+    command_counter = (uint32_t)buffUART[3] & 0xFF;
   }
 
   if (!shutdown && ((millis() - heartbeat) > shutoff_period)){
@@ -99,52 +105,55 @@ void do_Uart_Tick() {
   }
   
   // Handle control instructions
-  if ((int)Uart_Date != 0) Serial.println((int) Uart_Date);
-
-  switch ((int8_t)Uart_Date){
-    case 0: // nothing
-      break;
-    case 1:
-      drive_direction = 1;
-      break;
-    case 2:
-      drive_direction = -1;
-      break;
-    case 3:
-      turn_direction = 0;
-      turn_power = 0;
-      break;
-    case 4:
-      turn_direction = 1;
-      break;
-    case 5:
-      turn_direction = -1;
-      break;
-    case 6:
-      drive_direction = 0;
-      turn_direction = 0;
-      drive_power = 0;
-      turn_power = 0;
-      break;
-    case 7:
-      drive_direction = 0;
-      drive_power = 0;
-      break;
-    case 8:
-      do_print = !do_print;
-      break;
-    case 9: // heartbeat
-      break;
+  // if (Uart_Date != 0) Serial.println(Uart_Date);
+  if (command != prev_command){
+    switch (command){
+      case 0: // nothing
+        break;
+      case 1:
+        drive_direction = 1;
+        turn_direction = 0;
+        break;
+      case 2:
+        drive_direction = 1;
+        turn_direction = 1;
+        break;
+      case 3:
+        drive_direction = 1;
+        turn_direction = -1;
+        break;
+      case 4:
+        drive_direction = -1;
+        turn_direction = 0;
+        break;
+      case 5:
+        drive_direction = -1;
+        turn_direction = 1;
+        break;
+      case 6:
+        drive_direction = -1;
+        turn_direction = -1;
+        break;
+      case 7:
+        drive_direction = 0;
+        turn_direction = 1;
+        break;
+      case 8:
+        drive_direction = 0;
+        turn_direction = -1;
+        break;
+      case 9:
+        drive_direction = 0;
+        turn_direction = 0;
+        break;
+      case 10:
+        do_print = !do_print;
+        Serial.println("Print toggled for clipping.");
+        break;
+    }
   }
-  if ((int)Uart_Date > 9){
-    drive_power = (int8_t)Uart_Date;
-    Serial.print("Drive Power: ");
-    Serial.println(drive_power);
-  }
-  if ((int)Uart_Date < -9){
-    turn_power = abs((int8_t)Uart_Date);
-    Serial.print("Turn Power: ");
-    Serial.println(turn_power);
+  if (command != 0){
+    prev_command = command;
   }
 }
 
@@ -167,11 +176,15 @@ void do_Drive_Tick() {
       Serial.print(" || Drive: ");
       Serial.print(drive_power);
       Serial.print(", Turn: ");
-      Serial.println(turn_power);
+      Serial.print(turn_power);
+      Serial.print(", dir: ");
+      Serial.print(drive_direction);
+      Serial.print(", tur: ");
+      Serial.println(turn_direction);
     }
+  left(left_speed);
+  right(right_speed);
   }
-  //right(left_speed);
-  //right(right_speed);
 }
 
 int limit(int inp, int lower, int upper){
@@ -202,5 +215,5 @@ void setup() {
 
 void loop() {
   do_Uart_Tick();
-  if (changed_signal) do_Drive_Tick();
+  do_Drive_Tick();
 }
