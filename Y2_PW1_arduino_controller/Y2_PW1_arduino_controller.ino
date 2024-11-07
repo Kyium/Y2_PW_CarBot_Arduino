@@ -26,7 +26,7 @@ int32_t command_counter = 0;
 
 int analog_centre = 2048;
 int analog_limit = 4096;
-int inner_deadzone = 200;
+int inner_deadzone = 400;
 int outer_deadzone = 0;
 
 

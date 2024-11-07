@@ -44,11 +44,6 @@ void right(int8_t speed){
   }
 }
 
-void forward(int8_t speed){
-  left(speed);
-  right(speed);
-}
-
 void stop(){
   left(0);
   right(0);
@@ -81,7 +76,7 @@ void do_Uart_Tick() {
     
     if (debug == 1){
       Serial.print("0: ");
-      Serial.print((uint32_t)buffUART[0]);
+      Serial.print((uint32_t)buffUART[0] & 0xFF);
       Serial.print(", 1: ");
       Serial.print((uint32_t)buffUART[1] & 0xFF);
       Serial.print(", 2: ");
@@ -92,7 +87,7 @@ void do_Uart_Tick() {
     buffUARTIndex = 0;
     heartbeat = millis();
 
-    command = (uint32_t)buffUART[0];
+    command = (uint32_t)buffUART[0] & 0xFF;
     drive_power = (uint32_t)buffUART[1] & 0xFF;
     turn_power = (uint32_t)buffUART[2] & 0xFF;
     command_counter = (uint32_t)buffUART[3] & 0xFF;
