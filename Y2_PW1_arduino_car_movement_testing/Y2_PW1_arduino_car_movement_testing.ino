@@ -8,25 +8,33 @@ const int bufferSize = 32;
 char inputBuffer[bufferSize];
 int bufferIndex = 0;
 
-void left(int8_t speed){
-  analogWrite(speedPinL, abs(speed));
-  if (speed >= 0){
+void left(int16_t speed){
+  Serial.println((uint8_t)abs(speed));
+  analogWrite(speedPinL, (uint8_t)abs(speed));
+  if (speed > 0){
     digitalWrite(dir1PinL, HIGH);
     digitalWrite(dir2PinL, LOW);
-  } else {
+  } else if (speed < 0){
     digitalWrite(dir1PinL, LOW);
     digitalWrite(dir2PinL, HIGH);
+  } else {
+    digitalWrite(dir1PinL, LOW);
+    digitalWrite(dir2PinL, LOW);
   }
 }
 
-void right(int8_t speed){
-  analogWrite(speedPinR, abs(speed));
-  if (speed >= 0){
+void right(int16_t speed){
+  Serial.println((uint8_t)abs(speed));
+  analogWrite(speedPinR, (uint8_t)abs(speed));
+  if (speed > 0){
     digitalWrite(dir1PinR, HIGH);
     digitalWrite(dir2PinR, LOW);
-  } else {
+  } else if(speed < 0){
     digitalWrite(dir1PinR, LOW);
     digitalWrite(dir2PinR, HIGH);
+  } else {
+    digitalWrite(dir1PinR, LOW);
+    digitalWrite(dir2PinR, LOW);
   }
 }
 
@@ -37,7 +45,7 @@ void stop(){
 
 
 /* Set motor speed */
-void set_Motorspeed(int speed_L, int speed_R) {
+void set_Motorspeed(uint8_t speed_L, uint8_t speed_R) {
   analogWrite(speedPinL, speed_L); 
   analogWrite(speedPinR, speed_R);   
 }
@@ -101,13 +109,13 @@ void processCommand(char* command) {
     if (strcmp(key, "left") == 0) {
       Serial.print("Left command received with value: ");
       Serial.println(value);
-      left(value);
+      right(value);
       // Handle left command with the value
     } 
     else if (strcmp(key, "right") == 0) {
       Serial.print("Right command received with value: ");
       Serial.println(value);
-      right(value);
+      left(value);
       // Handle right command with the value
     } 
     else {

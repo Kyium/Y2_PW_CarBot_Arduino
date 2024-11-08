@@ -188,7 +188,7 @@ void controlCar(BLEDevice peripheral) {
         Serial.print((send >> 8) & 0xFF);
         Serial.print(", 2: ");
         Serial.print((send >> 16) & 0xFF);
-        Serial.print(", 3: ");
+        Serial.print(", 3: ");  
         Serial.println((send >> 24) & 0xFF);
         prev_command = command;
       }
@@ -196,8 +196,8 @@ void controlCar(BLEDevice peripheral) {
       delay(100);
 
       if (millis() - heartbeat_tracker > heartbeat_interval_ms && command == 0){
-        send_command(carCharacteristic, (int32_t)11);
-        heartbeat_tracker = millis();
+        //send_command(carCharacteristic, (int32_t)11);
+        //heartbeat_tracker = millis();
       }
   }
 }

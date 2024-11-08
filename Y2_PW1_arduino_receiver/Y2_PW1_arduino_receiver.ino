@@ -13,17 +13,24 @@ int8_t drive_direction = 0;
 int8_t turn_direction = 0;
 uint8_t drive_power = 0;
 uint8_t turn_power = 0;
-bool do_print = true;
+
+int8_t last_drive_direction = 0;
+int8_t last_turn_direction = 0;
+uint8_t last_drive_power = 0;
+uint8_t last_turn_power = 0;
+
+bool do_print = false;
 int32_t command = 0;
 int32_t prev_command = 0;
 
-int debug = 1;
+int debug = 0;
 uint32_t command_counter = 0;
 
 
 
-void left(int8_t speed){
-  analogWrite(speedPinL, abs(speed));
+void left(int16_t speed){
+  //Serial.println((uint8_t)abs(speed));
+  analogWrite(speedPinL, (uint8_t)abs(speed));
   if (speed >= 0){
     digitalWrite(dir1PinL, HIGH);
     digitalWrite(dir2PinL, LOW);
@@ -33,8 +40,9 @@ void left(int8_t speed){
   }
 }
 
-void right(int8_t speed){
-  analogWrite(speedPinR, abs(speed));
+void right(int16_t speed){
+  //Serial.println((uint8_t)abs(speed));
+  analogWrite(speedPinR, (uint8_t)abs(speed));
   if (speed >= 0){
     digitalWrite(dir1PinR, HIGH);
     digitalWrite(dir2PinR, LOW);
@@ -51,7 +59,7 @@ void stop(){
 
 
 /* Set motor speed */
-void set_Motorspeed(int speed_L, int speed_R) {
+void set_Motorspeed(uint8_t speed_L, uint8_t speed_R) {
   shutdown = false;
   analogWrite(speedPinL, speed_L); 
   analogWrite(speedPinR, speed_R);   
@@ -95,7 +103,7 @@ void do_Uart_Tick() {
 
   if (!shutdown && ((millis() - heartbeat) > shutoff_period)){
     stop();
-    Serial.println("H STOP");
+    //Serial.println("H STOP");
     shutdown = true;
   }
   
@@ -103,41 +111,44 @@ void do_Uart_Tick() {
   // if (Uart_Date != 0) Serial.println(Uart_Date);
   if (command != prev_command){
     switch (command){
-      case 0: // nothing
-        break;
-      case 1:
+      case 0:                // nothing
+        drive_direction = last_drive_direction;
+        turn_direction = last_turn_direction;
+        drive_power = last_drive_power;
+        turn_power = last_turn_power;
+      case 1:                // up
         drive_direction = 1;
         turn_direction = 0;
         break;
-      case 2:
+      case 2:                // up right
         drive_direction = 1;
         turn_direction = 1;
         break;
-      case 3:
+      case 3:                // up left
         drive_direction = 1;
         turn_direction = -1;
         break;
-      case 4:
+      case 4:                // down
         drive_direction = -1;
         turn_direction = 0;
         break;
-      case 5:
+      case 5:                // down right
         drive_direction = -1;
         turn_direction = 1;
         break;
-      case 6:
+      case 6:                // down left
         drive_direction = -1;
         turn_direction = -1;
         break;
-      case 7:
+      case 7:                // right
         drive_direction = 0;
         turn_direction = 1;
         break;
-      case 8:
+      case 8:                // left
         drive_direction = 0;
         turn_direction = -1;
         break;
-      case 9:
+      case 9:                // stop
         drive_direction = 0;
         turn_direction = 0;
         break;
@@ -153,21 +164,28 @@ void do_Uart_Tick() {
 }
 
 /* Car motor control */
-void do_Drive_Tick() {
+int do_Drive_Tick() {
+  if (turn_power == last_turn_power && turn_direction == last_turn_direction &&
+      drive_power == last_drive_power && drive_direction == last_drive_direction){
+    return;
+  }
   if (drive_direction == 0 && turn_direction == 0){
     stop();
   } else {
-    int left_speed = (drive_power * drive_direction) + (turn_power * turn_direction);
-    int right_speed = (drive_power * drive_direction) - (turn_power * turn_direction);
+    last_turn_power = turn_power;
+    last_drive_power = drive_power;
+    last_turn_direction = turn_direction;
+    last_drive_direction = drive_direction;
+    int left_speed = limit((drive_power * drive_direction) + (turn_power * turn_direction), -254, 254);
+    int right_speed = limit((drive_power * drive_direction) - (turn_power * turn_direction), -254, 254);
+
+    if (left_speed == 0 and right_speed == 0) return 0;
+
     if (do_print){
       Serial.print("Left: ");
       Serial.print(left_speed);
-      Serial.print(", Left clipped: ");
-      Serial.print(limit(left_speed, -255, 255));
       Serial.print(", Right: ");
       Serial.print(right_speed);
-      Serial.print(", Right Clipped: ");
-      Serial.print(limit(right_speed, -255, 255));
       Serial.print(" || Drive: ");
       Serial.print(drive_power);
       Serial.print(", Turn: ");
@@ -176,10 +194,13 @@ void do_Drive_Tick() {
       Serial.print(drive_direction);
       Serial.print(", tur: ");
       Serial.println(turn_direction);
+    } else {
+      delay(10);
     }
-  left(left_speed);
-  right(right_speed);
+    left(left_speed);
+    right(right_speed);
   }
+  return 1;
 }
 
 int limit(int inp, int lower, int upper){
@@ -209,6 +230,7 @@ void setup() {
 }
 
 void loop() {
+  delay(40);
   do_Uart_Tick();
   do_Drive_Tick();
 }
