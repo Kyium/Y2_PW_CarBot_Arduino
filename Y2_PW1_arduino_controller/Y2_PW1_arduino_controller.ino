@@ -38,7 +38,7 @@ void setup() {
   pinMode(LED_GREEN, OUTPUT);
   Serial.begin(9600);
   delay(1000);
-  while (!Serial);
+  //while (!Serial);
   // initialize the Bluetooth® Low Energy hardware
   BLE.begin();
 
